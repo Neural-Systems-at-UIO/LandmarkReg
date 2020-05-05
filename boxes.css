@@ -1,0 +1,17 @@
+body{
+    margin: 0
+}
+
+.box{
+    position: absolute;
+}
+
+.view{
+    cursor: crosshair
+}
+.trgctrl{
+    background: lightgreen;
+}
+.srcctrl{
+    background: lightblue;
+}

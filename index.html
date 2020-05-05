@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!--
+To change this license header, choose License Headers in Project Properties.
+To change this template file, choose Tools | Templates
+and open the template in the editor.
+-->
+<html lang="en">
+    <head>
+        <title>LMR launcher</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width">
+        <style>
+            table,th,td{border: 1px solid}
+        </style>
+        <script>
+            var list = [
+                {f:"WHS40.json",n:"WHS SD Rat v2 40um"},
+                {f:"AMBA10.json",n:"Allen Mouse 10um"},
+                {f:"WHSMouse.json",n:"WHS Mouse 21.5um"},
+                {f:"RatCT.json",n:"Rat CT"}
+            ];
+            function startup() {
+                var tb = document.getElementById("tb");
+                for (var i of list) {
+                    var tr = document.createElement("tr");
+                    var td = document.createElement("td");
+                    td.innerText = i.n;
+                    tr.appendChild(td);
+                    td = document.createElement("td");
+                    var rb = document.createElement("input");
+                    rb.type = "radio";
+                    rb.name = "targets";
+                    rb.value = i.f;
+                    td.appendChild(rb);
+                    tr.appendChild(td);
+                    td = document.createElement("td");
+                    rb = document.createElement("input");
+                    rb.type = "radio";
+                    rb.name = "sources";
+                    rb.value = i.f;
+                    td.appendChild(rb);
+                    tr.appendChild(td);
+                    tb.appendChild(tr);
+                }
+            }
+            function doclick() {
+                try {
+                    var src = document.getElementById("custom").value;
+                    if (src.length)
+                        open("LandmarkReg.html?target="
+                                + document.querySelector('input[name="targets"]:checked').value
+                                + "&cscs=" + src,
+                                "LandmarkReg");
+                    else
+                        open("LandmarkReg.html?target="
+                                + document.querySelector('input[name="targets"]:checked').value
+                                + "&source="
+                                + document.querySelector('input[name="sources"]:checked').value,
+                                "LandmarkReg");
+                } catch (ex) {
+                    var msg = document.getElementById("msg");
+                    msg.innerHTML = "Please specify both target and source volumes";
+                    setTimeout(function () {
+                        msg.innerHTML = "";
+                    }, 2000);
+                }
+            }
+        </script>
+    </head>
+    <body onload="startup()">
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Target</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody id="tb">
+            </tbody>
+        </table><br>
+        Custom source:<input id="custom" placeholder="CSCS link"><br>
+        <button onclick="doclick()">Go</button><div id="msg"></div>
+        <p>
+            Example (rather terrible, presumably mouse):
+        <ul>
+            <li>https://object.cscs.ch/v1/AUTH_08c08f9f119744cbbf77e216988da3eb/imgsvc-08c41a4e-079f-42e6-a44b-297a5d0f0758</li>
+        </ul>
+        <p>
+            Identity:
+        <ul>
+            <li>[{"name":"org","x":0,"y":0,"z":0,"px":0,"py":0,"pz":0},{"name":"x","x":1,"y":0,"z":0,"px":1,"py":0,"pz":0},{"name":"y","x":0,"y":1,"z":0,"px":0,"py":1,"pz":0},{"name":"z","x":0,"y":0,"z":1,"px":0,"py":0,"pz":1}]</li>
+        </ul>
+    </body>
+</html>

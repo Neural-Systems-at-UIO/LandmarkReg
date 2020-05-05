@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<!--
+To change this license header, choose License Headers in Project Properties.
+To change this template file, choose Tools | Templates
+and open the template in the editor.
+-->
+<html lang="en">
+    <head>
+<!--        <title>LMReg: "821" HalfBrain - AMBA M10</title>-->
+        <title>LandmarkReg</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width">
+        <link rel="stylesheet" href="boxes.css" type="text/css">
+        <script src="helpers.js"></script>
+        <script src="linalg.js"></script>
+        <script src="mrnc.js"></script>
+        <script>
+            var boxes=[
+                {id:"trgcor",x:0,y:0},
+                {id:"trgsag",x:1,y:0},
+                {id:"trghor",x:0,y:1},
+                {id:"trgctrl",x:1,y:1},
+                {id:"srccor",x:2,y:0},
+                {id:"srcsag",x:3,y:0},
+                {id:"srchor",x:2,y:1},
+                {id:"srcctrl",x:3,y:1}
+            ];
+            var views={};
+            function resize(){
+                layoutboxes(boxes);
+                ["trgcor","trgsag","trghor","srccor","srcsag","srchor"].forEach(function(view){
+                    var ctx=document.getElementById(view).getContext("2d");
+                    var imagedata=ctx.createImageData(boxw,boxh);
+                    var auxdata=ctx.createImageData(boxw,boxh);
+                    for(var i=0;i<boxw*boxh*4;i++)
+                        imagedata.data[i]=auxdata.data[i]=255;
+                    views[view]={
+                        ctx:ctx,
+                        width:boxw,
+                        height:boxh,
+                        imagedata:imagedata,
+                        auxdata:auxdata
+                    };
+                });
+                redraw();
+            }
+            function startup(){
+                window.addEventListener("resize",resize);
+                resize();
+                ["trgcor","trgsag","trghor","srccor","srcsag","srchor"].forEach(function(id){
+                    var cnv=document.getElementById(id);
+                    cnv.addEventListener("wheel",mwheel);
+                    cnv.addEventListener("mousedown",mdown);
+                    cnv.addEventListener("mouseup",mup);
+                    cnv.addEventListener("mouseout",mout);
+                    cnv.addEventListener("mousemove",mmove);
+                });
+                var settings={};
+                location.search.substring(1).split("&").forEach(function(pair){
+                    pair=pair.split("=");
+                    settings[pair[0]]=pair[1];
+                });
+                var xhr=new XMLHttpRequest();
+                xhr.open("GET",settings.target);
+                xhr.onload=targetloaded;
+                xhr.send();
+
+                if(settings.source){
+                    xhr=new XMLHttpRequest();
+                    xhr.open("GET",settings.source);
+                    xhr.onload=sourceloaded;
+                    xhr.send();
+                } else if(settings.cscs){
+                    mrnc(settings.cscs);
+                }
+            }
+            function mwheel(event){
+//                event.preventDefault();
+                if(event.target.id.substring(0,3)==="trg" || document.getElementById("link").checked){
+                    if(event.deltaY<0)
+                        target.cut.zoom*=0.9;
+                    else
+                        target.cut.zoom/=0.9;
+                }
+                else if(event.target.id.substring(0,3)==="src"){
+                    if(event.deltaY<0)
+                        source.cut.zoom*=0.9;
+                    else
+                        source.cut.zoom/=0.9;
+                }
+
+                redraw();
+            }
+            var mx=-1,my;
+            function mdown(event){
+                mx=event.offsetX;
+                my=event.offsetY;
+            }
+            function mup(event){
+                mx=-1;
+            }
+            function mout(event){
+                mup(event);
+            }
+            function mmove(event){
+                if(mx<0)return;
+                var cut;
+                if(event.target.id.substring(0,3)==="trg" || document.getElementById("link").checked){
+                    cut=target.cut;
+                }else if(event.target.id.substring(0,3)==="src"){
+                    cut=source.cut;
+                }
+                if(cut){
+                    switch(event.target.id.substr(3)){
+                        case "cor":
+                            cut.x-=(event.offsetX-mx)*cut.zoom/boxsize;
+                            cut.y-=(event.offsetY-my)*cut.zoom/boxsize;
+                            break;
+                        case "sag":
+                            cut.z-=(event.offsetX-mx)*cut.zoom/boxsize;
+                            cut.y-=(event.offsetY-my)*cut.zoom/boxsize;
+                            break;
+                        case "hor":
+                            cut.x-=(event.offsetX-mx)*cut.zoom/boxsize;
+                            cut.z-=(event.offsetY-my)*cut.zoom/boxsize;
+                            break;
+                    }
+                    redraw();
+                    if(document.getElementById("link").checked){
+                        var vec=[[cut.x,cut.y,cut.z,1]];
+                        vec=matmul(vec,trf);
+                        source.cut.x=vec[0][0];
+                        source.cut.y=vec[0][1];
+                        source.cut.z=vec[0][2];
+                    }
+                }
+                mx=event.offsetX;
+                my=event.offsetY;
+            }
+            var target;
+            function targetloaded(event){
+                target=JSON.parse(event.target.responseText);
+                
+                var volume=target.volume;
+                target.cut={
+                    x:volume.width/2,
+                    y:volume.height/2,
+                    z:volume.length/2,
+                    zoom:Math.max(volume.width,volume.height,volume.length)
+                };
+                
+                var tech=target.tech;
+                var mods=document.getElementById("trgmods");
+                target.mods.forEach(function(mod,idx){
+                    var opt=document.createElement("option");
+                    opt.text=mod.name;
+                    mods.appendChild(opt);
+                    
+                    mod.worker=new Worker(mod.type+".js");
+                    mod.worker.onmessage=workerhandler;
+                    tech.urlformatter=mod.urlformatter;
+                    tech.idx=idx;
+                    mod.worker.postMessage({op:"dataprops",props:tech});
+                    mod.worker.postMessage({op:"registerview",id:"trgcor"});
+                    mod.worker.postMessage({op:"registerview",id:"trgsag"});
+                    mod.worker.postMessage({op:"registerview",id:"trghor"});
+                });
+                mods.selectedIndex=0;
+                
+                if(target.palette){
+                    var palette=target.palette;
+                    var rgbpalette=new Uint8Array(3*65536);
+                    var textpalette=[];
+                    for(var idx in palette){
+                        if(palette.hasOwnProperty(idx)){
+                            var item=palette[idx];
+                            idx=parseInt(idx);
+                            textpalette[idx]=item.text;
+                            idx*=3;
+                            rgbpalette[idx]=parseInt(item.r);
+                            rgbpalette[idx+1]=parseInt(item.g);
+                            rgbpalette[idx+2]=parseInt(item.b);
+                        }
+                    }
+                    target.rgbpalette=rgbpalette;
+                    var rainbowpalette=new Uint8ClampedArray(rgbpalette);
+                    rainbowpalette.forEach(function(item,idx){
+                        rainbowpalette[idx]=item+Math.random()*21-10;
+                    });
+                    target.rainbowpalette=rainbowpalette;
+                }
+                
+                redraw();
+            }
+            function workerhandler(event){
+                        if(document.getElementById("trgmods").selectedIndex!==event.data.mod)return;
+                        var mod=target.mods[event.data.mod];
+                        var view=views[event.data.id];
+                        //view.data=event.data.view;
+                        switch(mod.type){
+                            case "gray8":
+                                putgraydata(view,event.data.view,document.getElementById("min1").value,document.getElementById("max1").value);
+                                break;
+                            case "rgb24":
+                                putcolordata(view,event.data.view);
+                                break;
+                            case "idx":
+                                putidxdata(view,event.data.view,target.rgbpalette);
+                                break;
+                        }
+                        trymix(event.data.id.substring(3));
+                        haircross(view.ctx,"#FFFF80");
+            }
+            
+            var source;
+            function sourceloaded(event){
+                source=JSON.parse(event.target.responseText);
+                var volume=source.volume;
+                source.cut={
+                    x:volume.width/2,
+                    y:volume.height/2,
+                    z:volume.length/2,
+                    zoom:Math.max(volume.width,volume.height,volume.length)
+                };
+                
+                var tech=source.tech;
+                var mods=document.getElementById("srcmods");
+                source.mods.forEach(function(mod,idx){
+                    var opt=document.createElement("option");
+                    opt.text=mod.name;
+                    mods.appendChild(opt);
+                    
+                    mod.worker=new Worker(mod.type+".js");
+                    mod.worker.onmessage=sworkerhandler;
+                    tech.urlformatter=mod.urlformatter;
+                    tech.idx=idx;
+                    mod.worker.postMessage({op:"dataprops",props:tech});
+                    mod.worker.postMessage({op:"registerview",id:"srccor"});
+                    mod.worker.postMessage({op:"registerview",id:"srcsag"});
+                    mod.worker.postMessage({op:"registerview",id:"srchor"});
+                });
+                mods.selectedIndex=0;
+                
+                if(source.palette){
+                    var palette=source.palette;
+                    var rgbpalette=new Uint8Array(3*65536);
+                    var textpalette=[];
+                    for(var idx in palette){
+                        if(palette.hasOwnProperty(idx)){
+                            var item=palette[idx];
+                            idx=parseInt(idx);
+                            textpalette[idx]=item.text;
+                            idx*=3;
+                            rgbpalette[idx]=parseInt(item.r);
+                            rgbpalette[idx+1]=parseInt(item.g);
+                            rgbpalette[idx+2]=parseInt(item.b);
+                        }
+                    }
+                    source.rgbpalette=rgbpalette;
+                }
+                redraw();
+            }
+            function sworkerhandler(event){
+//                console.log(event);
+                if(document.getElementById("srcmods").selectedIndex!==event.data.mod)return;
+                var mod=source.mods[event.data.mod];
+                var view=views[event.data.id];
+                //view.data=event.data.view;
+                switch(mod.type){
+                    case "gray8":
+                        var m2v=document.getElementById("max2").value;
+                        var m2m=document.getElementById("max2").max;
+                        if(m2v===m2m){
+                            for(var v of event.data.view.data)
+                                if(v!==65535 && m2v<v)
+                                    m2v=v;
+                            document.getElementById("max2").value=document.getElementById("max2").max=m2v;
+                        }
+                        putgraydata(view,event.data.view,document.getElementById("min2").value,document.getElementById("max2").value);
+                        break;
+                    case "rgb24":
+                        putcolordata(view,event.data.view);
+                        break;
+                    case "idx":
+                        putidxdata(view,event.data.view,source.rgbpalette);
+                        break;
+                }
+                trymix(event.data.id.substring(3));
+                haircross(view.ctx,"#FFFF80");
+            }
+
+            
+            function redraw(){
+                var targetbase;
+                if(target){
+                    var x=target.cut.x,y=target.cut.y,z=target.cut.z,zoom=target.cut.zoom;
+                    document.getElementById("coords").innerHTML=x.toFixed(0)+", "+y.toFixed(0)+", "+z.toFixed(0);
+                    var w2=zoom*boxw/boxsize/2;
+                    var h2=zoom*boxh/boxsize/2;
+                    var mod=target.mods[document.getElementById("trgmods").selectedIndex];
+                    
+                    /*var*/ targetbase=[
+                        {
+                            id:"trgcor",
+                            ouv:[
+                                [x-w2,y-h2,z,1],
+                                [x+w2,y-h2,z,1],
+                                [x-w2,y+h2,z,1]
+                            ]
+                        },
+                        {
+                            id:"trgsag",
+                            ouv:[
+                                [x,y-h2,z-w2,1],
+                                [x,y-h2,z+w2,1],
+                                [x,y+h2,z-w2,1]
+                            ]
+                        },
+                        {
+                            id:"trghor",
+                            ouv:[
+                                [x-w2,y,z-h2,1],
+                                [x+w2,y,z-h2,1],
+                                [x-w2,y,z+h2,1]
+                            ]
+                        }
+                    ];
+
+                    targetbase.forEach(function(base){
+                        var tech=matmul(base.ouv,target.basetrf);
+                        mod.worker.postMessage({
+                            op:"draw",
+                            id:base.id,
+                            width:boxw,
+                            height:boxh,
+                            ox:tech[0][0],
+                            oy:tech[0][1],
+                            oz:tech[0][2],
+                            ux:tech[1][0]-tech[0][0],
+                            uy:tech[1][1]-tech[0][1],
+                            uz:tech[1][2]-tech[0][2],
+                            vx:tech[2][0]-tech[0][0],
+                            vy:tech[2][1]-tech[0][1],
+                            vz:tech[2][2]-tech[0][2]
+                        });
+                    });
+                }
+                if(source){
+                    var x=source.cut.x,y=source.cut.y,z=source.cut.z,zoom=source.cut.zoom;
+                    document.getElementById("coords2").innerHTML=x.toFixed(0)+", "+y.toFixed(0)+", "+z.toFixed(0);
+                    var w2=zoom*boxw/boxsize/2;
+                    var h2=zoom*boxh/boxsize/2;
+                    var mod=source.mods[document.getElementById("srcmods").selectedIndex];
+                    
+                    var sourcebase;
+                    if(!document.getElementById("link").checked)
+                        sourcebase=[
+                            {
+                                id:"srccor",
+                                ouv:[
+                                    [x-w2,y-h2,z,1],
+                                    [x+w2,y-h2,z,1],
+                                    [x-w2,y+h2,z,1]
+                                ]
+                            },
+                            {
+                                id:"srcsag",
+                                ouv:[
+                                    [x,y-h2,z-w2,1],
+                                    [x,y-h2,z+w2,1],
+                                    [x,y+h2,z-w2,1]
+                                ]
+                            },
+                            {
+                                id:"srchor",
+                                ouv:[
+                                    [x-w2,y,z-h2,1],
+                                    [x+w2,y,z-h2,1],
+                                    [x-w2,y,z+h2,1]
+                                ]
+                            }
+                        ];
+                    else{
+                        sourcebase=[{id:"srccor"},{id:"srcsag"},{id:"srchor"}];
+                        for(var i=0;i<3;i++)
+                            sourcebase[i].ouv=matmul(targetbase[i].ouv,trf);
+                    }
+
+                    sourcebase.forEach(function(base){
+                        var tech=matmul(base.ouv,source.basetrf);
+                        mod.worker.postMessage({
+                            op:"draw",
+                            id:base.id,
+                            width:boxw,
+                            height:boxh,
+                            ox:tech[0][0],
+                            oy:tech[0][1],
+                            oz:tech[0][2],
+                            ux:tech[1][0]-tech[0][0],
+                            uy:tech[1][1]-tech[0][1],
+                            uz:tech[1][2]-tech[0][2],
+                            vx:tech[2][0]-tech[0][0],
+                            vy:tech[2][1]-tech[0][1],
+                            vz:tech[2][2]-tech[0][2]
+                        });
+                    });
+                }
+            }
+            
+            var pairs=[];
+            function buildlandmarks(active){
+                var select=document.getElementById("landmarks");
+                while(select.length)
+                    select.remove(0);
+                for(var i=0;i<pairs.length;i++){
+                    var option=document.createElement("option");
+                    option.text=pairs[i].name;
+                    select.add(option);
+                    if(pairs[i].name===active)
+                        select.selectedIndex=i;
+                }
+                var option=document.createElement("option");
+                option.text="---";
+                select.add(option);
+                if(!active)select.selectedIndex=select.length-1;
+            }
+            function addlandmark(){
+                var nameelem=document.getElementById("name");
+                var name=nameelem.value;
+                if(name.length===0)return;
+                pairs.push({name:name,x:target.cut.x,y:target.cut.y,z:target.cut.z});
+                nameelem.value="";
+                buildlandmarks(name);
+                calctrf();
+            }
+            function jumplandmark(){
+                var select=document.getElementById("landmarks");
+                if(select.selectedIndex===select.length-1)return;
+                var pair=pairs[select.selectedIndex];
+                target.cut.x=pair.x;
+                target.cut.y=pair.y;
+                target.cut.z=pair.z;
+                if(pair.hasOwnProperty('px')){
+                    source.cut.x=pair.px;
+                    source.cut.y=pair.py;
+                    source.cut.z=pair.pz;
+                }
+                redraw();
+            }
+            function deletelandmark(){
+                var select=document.getElementById("landmarks");
+                var idx=select.selectedIndex;
+                if(idx===select.length-1)return;
+                document.getElementById("name").value=pairs[idx].name;
+                for(var i=idx+1;i<pairs.length;i++)
+                    pairs[i-1]=pairs[i];
+                pairs.pop();
+                select.remove(idx);
+                select.selectedIndex=select.length-1;
+                calctrf();
+            }
+            function storepair(){
+                var select=document.getElementById("landmarks");
+                var idx=select.selectedIndex;
+                if(idx===select.length-1)return;
+                var pair=pairs[idx];
+                pair.px=source.cut.x;
+                pair.py=source.cut.y;
+                pair.pz=source.cut.z;
+                calctrf();
+            }
+            function removepair(){
+                var select=document.getElementById("landmarks");
+                var idx=select.selectedIndex;
+                if(idx===select.length-1)return;
+                var pair=pairs[idx];
+                delete pair.px;
+                delete pair.py;
+                delete pair.pz;
+                calctrf();
+            }
+            function saveload(){
+                var hack=JSON.stringify(pairs);
+//                if(hack==="[]")hack=JSON.stringify([
+//                    {"name":"1","x":26,"y":212,"z":547,"px":1287,"py":452,"pz":808},
+//                    {"name":"2","x":447,"y":220,"z":547,"px":1275,"py":1626,"pz":808},
+//                    {"name":"3","x":245,"y":263,"z":401,"px":1115,"py":1048,"pz":565},
+//                    {"name":"4","x":245,"y":103,"z":767,"px":1532,"py":1032,"pz":1275}
+//                ]);
+//                var data=prompt("Landmarks",JSON.stringify(pairs));
+                var data=prompt("Landmarks",hack);
+                if(data===null || data==="")return;
+                pairs=JSON.parse(data);
+                buildlandmarks();
+                calctrf();
+            }
+            function save(){
+                var hack=JSON.stringify(pairs);
+                var win=window.open("about:blank","LMSave");
+                var d=win.document.open();
+                d.write(hack);
+                d.close();
+            }
+
+            var trf;
+            function calctrf(){
+                var cbx=document.getElementById("link");
+                trf=undefined;
+                var A=[];
+                var B=[];
+                for(var i=0;i<pairs.length;i++){
+                    var pair=pairs[i];
+                    if(pair.hasOwnProperty('px')){
+                        A.push([pair.x,pair.y,pair.z,1]);
+                        B.push([pair.px,pair.py,pair.pz,1]);
+                    }
+                }
+                if(A.length<4){
+                    cbx.checked=false;
+                    cbx.disabled=true;
+                    return;
+                }
+                var AT=tpose(A);
+                var ATA=matmul(AT,A);
+                var inv=inv4x4(ATA);
+                if(inv.length<4){
+                    cbx.checked=false;
+                    cbx.disabled=true;
+                    return;
+                }
+                cbx.disabled=false;
+                trf=matmul(matmul(inv,AT),B);
+            }
+            function swaptarget(){
+                var tmp=target.rainbowpalette;
+                target.rainbowpalette=target.rgbpalette;
+                target.rgbpalette=tmp;
+                redraw();
+            }
+        </script>
+    </head>
+    <body onload="startup()">
+        <canvas id="trgcor" class="box view"></canvas>
+        <canvas id="trgsag" class="box view"></canvas>
+        <canvas id="trghor" class="box view"></canvas>
+        <canvas id="srccor" class="box view"></canvas>
+        <canvas id="srcsag" class="box view"></canvas>
+        <canvas id="srchor" class="box view"></canvas>
+        <div id="trgctrl" class="box trgctrl">
+            <select id="trgmods" onchange="redraw()"></select>
+            <div id="coords"></div>
+            <input id="name" type="text"><button onclick="addlandmark()">Add</button><br>
+            <select id="landmarks" onchange="jumplandmark()"><option>---</option></select><button onclick="deletelandmark()">Delete</button><br>
+            <input id="max1" type="range" min="0" max="255" value="255" style="width:95%" onchange="redraw()">
+            <input id="min1" type="range" min="0" max="255" value="0" style="width:95%" onchange="redraw()">
+            <button onclick="swaptarget()">Rainbow</button>
+        </div>
+        <div id="srcctrl" class="box srcctrl">
+            <select id="srcmods" onchange="redraw()"></select>
+            <div id="coords2"></div>
+            <button onclick="storepair()">Store</button><button onclick="removepair()">Remove</button><br>
+            <input id="link" type="checkbox" disabled onchange="redraw()">Link views
+            <input id="mix" type="range" min="0" max="100" value="0" onchange="redraw()">
+            <input id="max2" type="range" min="0" max="255" value="255" style="width:95%" onchange="redraw()">
+            <input id="min2" type="range" min="0" max="255" value="0" style="width:95%" onchange="redraw()">
+            <button onclick="saveload()">Load</button><button onclick="save()">Save</button>
+        </div>
+    </body>
+</html>

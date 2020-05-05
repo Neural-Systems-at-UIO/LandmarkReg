@@ -1,0 +1,41 @@
+{
+    "name": "WHS Rat",
+    
+    "volume":{
+        "width": 512,
+        "height": 512,
+        "length": 1024
+    },
+
+    "tech":{
+        "xdim": 512,
+        "ydim": 1024,
+        "zdim": 512,
+        "maxlevel": 4
+    },
+    
+    "basetrf": [
+        [1,0,0,0],
+        [0,0,-1,0],
+        [0,-1,0,0],
+        [0,1023,511,1]
+    ],
+    
+    "mods":[
+        {
+            "name": "T2*",
+            "type": "gray8",
+            "urlformatter": "'nprox.php?canon_T2star_r/'+l+'/'+z+'/'+y+'/'+x+'.png'"
+        },
+        {
+            "name": "T2W",
+            "type": "gray8",
+            "urlformatter": "'nprox.php?canon_T2W_r/'+l+'/'+z+'/'+y+'/'+x+'.png'"
+        },
+        {
+            "name": "T1",
+            "type": "gray8",
+            "urlformatter": "'nprox.php?canon_T1_r/'+l+'/'+z+'/'+y+'/'+x+'.png'"
+        }
+    ]
+}
