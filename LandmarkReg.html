@@ -44,6 +44,7 @@ and open the template in the editor.
                 });
                 redraw();
             }
+            var doslow;
             function startup(){
                 window.addEventListener("resize",resize);
                 resize();
@@ -60,6 +61,7 @@ and open the template in the editor.
                     pair=pair.split("=");
                     settings[pair[0]]=pair[1];
                 });
+                doslow=settings.doslow;
                 var xhr=new XMLHttpRequest();
                 xhr.open("GET",settings.target);
                 xhr.onload=targetloaded;
@@ -288,9 +290,19 @@ and open the template in the editor.
                 trymix(event.data.id.substring(3));
                 haircross(view.ctx,"#FFFF80");
             }
-
             
+            var schd=false;
             function redraw(){
+                if(doslow)
+                    doredraw();
+                else if(!schd){
+                    schd=true;
+                    setTimeout(doredraw,50);
+                }
+            }
+            
+            function doredraw(){
+                schd=false;
                 var targetbase;
                 if(target){
                     var x=target.cut.x,y=target.cut.y,z=target.cut.z,zoom=target.cut.zoom;
